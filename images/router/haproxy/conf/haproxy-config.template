@@ -351,12 +351,21 @@ backend be_secure:{{$cfgIdx}}
   #HTTP request rate not restricted
       {{- end }}
     {{- end }}
-
+    
   timeout check 5000ms
   http-request set-header X-Forwarded-Host %[req.hdr(host)]
   http-request set-header X-Forwarded-Port %[dst_port]
-  http-request set-header X-Forwarded-Proto http if !{ ssl_fc }
-  http-request set-header X-Forwarded-Proto https if { ssl_fc }
+  # If ROUTER_EXTERNAL_SSL_TERMINATION env variable is set then it is up to the upstream to provide the correct protocol header
+   {{- if isTrue (env "ROUTER_EXTERNAL_SSL_TERMINATION") }}
+    # Check if X-F-P header exits
+    acl no-x-forwarded-proto req.hdr(X-Forwarded-Proto) -m len 0
+    http-request set-header X-Forwarded-Proto %[req.hdr(X-Forwarded-Proto)]
+    http-request set-header X-Forwarded-Proto http if no-x-forwarded-proto
+  {{- else }}
+    http-request set-header X-Forwarded-Proto http if !{ ssl_fc }
+    http-request set-header X-Forwarded-Proto https if { ssl_fc }
+  {{- end }}
+ 
   {{- if matchPattern "(v4)?v6" $router_ip_v4_v6_mode }}
   # See the quoting rules in https://tools.ietf.org/html/rfc7239 for IPv6 addresses (v4 addresses get translated to v6 when in hybrid mode)
   http-request add-header Forwarded for=\"[%[src]]\";host=%[req.hdr(host)];proto=%[req.hdr(X-Forwarded-Proto)]
